@@ -14,13 +14,73 @@ path operator""_p(const char* data, std::size_t sz) {
     return path(data, data + sz);
 }
 
-// напишите эту функцию
-bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories);
+bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories) {
+    static regex include_1(R"/(\s*#\s*include\s*"([^"]*)"\s*)/");
+    static regex include_2(R"/(\s*#\s*include\s*<([^>]*)>\s*)/");
+    smatch m;
+    string line;
+    int i = 1;
+    bool error = true;
+
+    ifstream cin_file(in_file);
+    if (!cin_file.is_open()) {
+        return false;
+    }
+
+    ofstream cout_file(out_file, ios::app);
+    if (!cout_file.is_open()) {
+        return false;
+    }
+
+    while (getline(cin_file, line) && error) {
+        if (regex_match(line, m, include_1)) {
+            path new_path = in_file.parent_path() / m[1].str();
+            error = Preprocess(new_path, out_file, include_directories);
+            if (error) {
+                ++i;
+                continue;
+            }
+            if (!filesystem::exists(new_path)) {
+                for (const auto& dir_entry : include_directories) {
+                    path new_path = dir_entry / m[1].str();
+                    if (filesystem::exists(new_path)) {
+                        error = Preprocess(new_path, out_file, include_directories);
+                        break;
+                    }
+                }
+                if (error) {
+                    ++i;
+                    continue;
+                }
+                cout << "unknown include file " << m[1].str() << " at file " << in_file.string() << " at line " << i << endl;
+                return false;
+            }
+        }
+        else if (regex_match(line, m, include_2)) {
+            for (const auto& dir_entry : include_directories) {
+                path new_path = dir_entry / m[1].str();
+                if (filesystem::exists(new_path)) {
+                    error = Preprocess(new_path, out_file, include_directories);
+                    break;
+                }
+                cout << "unknown include file " << m[1].str() << " at file " << in_file.string() << " at line " << i << endl;
+                return false;
+            }
+            continue;
+        }
+        else if (!cin_file) {
+            cout << "unknown include file " << m[1].str() << " at file " << in_file.string() << " at line " << i << endl;
+            return false;
+        }
+        cout_file << line << endl;
+        ++i;
+    }
+    return true;
+
+}
 
 string GetFileContents(string file) {
     ifstream stream(file);
-
-    // конструируем string по двум итераторам
     return {(istreambuf_iterator<char>(stream)), istreambuf_iterator<char>()};
 }
 
