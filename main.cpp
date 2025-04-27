@@ -14,12 +14,16 @@ path operator""_p(const char* data, std::size_t sz) {
     return path(data, data + sz);
 }
 
+void PrintError(const int& num_string, const smatch& m, const string& filename) {
+    cout << "unknown include file " << m[1].str() << " at file " << filename << " at line " << num_string << endl;
+}
+
 bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories) {
-    static regex include_1(R"/(\s*#\s*include\s*"([^"]*)"\s*)/");
-    static regex include_2(R"/(\s*#\s*include\s*<([^>]*)>\s*)/");
+    static regex include_with_quotations(R"/(\s*#\s*include\s*"([^"]*)"\s*)/");
+    static regex include_with_arrows(R"/(\s*#\s*include\s*<([^>]*)>\s*)/");
     smatch m;
     string line;
-    int i = 1;
+    int num_string = 1;
     bool error = true;
 
     ifstream cin_file(in_file);
@@ -33,11 +37,11 @@ bool Preprocess(const path& in_file, const path& out_file, const vector<path>& i
     }
 
     while (getline(cin_file, line) && error) {
-        if (regex_match(line, m, include_1)) {
+        if (regex_match(line, m, include_with_quotations)) {
             path new_path = in_file.parent_path() / m[1].str();
             error = Preprocess(new_path, out_file, include_directories);
             if (error) {
-                ++i;
+                ++num_string;
                 continue;
             }
             if (!filesystem::exists(new_path)) {
@@ -49,31 +53,34 @@ bool Preprocess(const path& in_file, const path& out_file, const vector<path>& i
                     }
                 }
                 if (error) {
-                    ++i;
+                    ++num_string;
                     continue;
                 }
-                cout << "unknown include file " << m[1].str() << " at file " << in_file.string() << " at line " << i << endl;
+                PrintError(num_string, m, in_file.string());
                 return false;
             }
         }
-        else if (regex_match(line, m, include_2)) {
+        else if (regex_match(line, m, include_with_arrows)) {
             for (const auto& dir_entry : include_directories) {
                 path new_path = dir_entry / m[1].str();
                 if (filesystem::exists(new_path)) {
                     error = Preprocess(new_path, out_file, include_directories);
                     break;
                 }
-                cout << "unknown include file " << m[1].str() << " at file " << in_file.string() << " at line " << i << endl;
+                PrintError(num_string, m, in_file.string());
                 return false;
             }
-            continue;
+            if (error) {
+                ++num_string;
+                continue;
+            }
         }
         else if (!cin_file) {
-            cout << "unknown include file " << m[1].str() << " at file " << in_file.string() << " at line " << i << endl;
+            PrintError(num_string, m, in_file.string());
             return false;
         }
         cout_file << line << endl;
-        ++i;
+        ++num_string;
     }
     return true;
 
@@ -81,7 +88,7 @@ bool Preprocess(const path& in_file, const path& out_file, const vector<path>& i
 
 string GetFileContents(string file) {
     ifstream stream(file);
-    return {(istreambuf_iterator<char>(stream)), istreambuf_iterator<char>()};
+    return { (istreambuf_iterator<char>(stream)), istreambuf_iterator<char>() };
 }
 
 void Test() {
@@ -94,32 +101,32 @@ void Test() {
     {
         ofstream file("sources/a.cpp");
         file << "// this comment before include\n"
-                "#include \"dir1/b.h\"\n"
-                "// text between b.h and c.h\n"
-                "#include \"dir1/d.h\"\n"
-                "\n"
-                "int SayHello() {\n"
-                "    cout << \"hello, world!\" << endl;\n"
-                "#   include<dummy.txt>\n"
-                "}\n"s;
+            "#include \"dir1/b.h\"\n"
+            "// text between b.h and c.h\n"
+            "#include \"dir1/d.h\"\n"
+            "\n"
+            "int SayHello() {\n"
+            "    cout << \"hello, world!\" << endl;\n"
+            "#   include<dummy.txt>\n"
+            "}\n"s;
     }
     {
         ofstream file("sources/dir1/b.h");
         file << "// text from b.h before include\n"
-                "#include \"subdir/c.h\"\n"
-                "// text from b.h after include"s;
+            "#include \"subdir/c.h\"\n"
+            "// text from b.h after include"s;
     }
     {
         ofstream file("sources/dir1/subdir/c.h");
         file << "// text from c.h before include\n"
-                "#include <std1.h>\n"
-                "// text from c.h after include\n"s;
+            "#include <std1.h>\n"
+            "// text from c.h after include\n"s;
     }
     {
         ofstream file("sources/dir1/d.h");
         file << "// text from d.h before include\n"
-                "#include \"lib/std2.h\"\n"
-                "// text from d.h after include\n"s;
+            "#include \"lib/std2.h\"\n"
+            "// text from d.h after include\n"s;
     }
     {
         ofstream file("sources/include1/std1.h");
@@ -131,22 +138,22 @@ void Test() {
     }
 
     assert((!Preprocess("sources"_p / "a.cpp"_p, "sources"_p / "a.in"_p,
-                                  {"sources"_p / "include1"_p,"sources"_p / "include2"_p})));
+        { "sources"_p / "include1"_p,"sources"_p / "include2"_p })));
 
     ostringstream test_out;
     test_out << "// this comment before include\n"
-                "// text from b.h before include\n"
-                "// text from c.h before include\n"
-                "// std1\n"
-                "// text from c.h after include\n"
-                "// text from b.h after include\n"
-                "// text between b.h and c.h\n"
-                "// text from d.h before include\n"
-                "// std2\n"
-                "// text from d.h after include\n"
-                "\n"
-                "int SayHello() {\n"
-                "    cout << \"hello, world!\" << endl;\n"s;
+        "// text from b.h before include\n"
+        "// text from c.h before include\n"
+        "// std1\n"
+        "// text from c.h after include\n"
+        "// text from b.h after include\n"
+        "// text between b.h and c.h\n"
+        "// text from d.h before include\n"
+        "// std2\n"
+        "// text from d.h after include\n"
+        "\n"
+        "int SayHello() {\n"
+        "    cout << \"hello, world!\" << endl;\n"s;
 
     assert(GetFileContents("sources/a.in"s) == test_out.str());
 }
